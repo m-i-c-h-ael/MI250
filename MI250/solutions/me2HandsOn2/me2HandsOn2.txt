@@ -1,0 +1,47 @@
+
+model
+{
+
+  for(i in 1:nsub){
+	
+    log.ec50[i] ~ dnorm(log.ec50.hat,tau.ec50)
+    log(ec50[i]) <- log.ec50[i]
+		
+    log.ec50.pred[i] ~ dnorm(log.ec50.hat,tau.ec50)
+    log(ec50.pred[i]) <- log.ec50.pred[i]
+
+  }
+	
+  for(i in 1:nobs){
+	
+    fxa[i] ~ dnorm(fxa.hat[i],tau)      # likelihood
+    fxa.cond[i] ~ dnorm(fxa.hat[i],tau) # simulation to generate posterior predictive distributions
+    fxa.hat[i] <- emax * pow(cobs[i],gamma) / (pow(ec50[subject[i]],gamma) + pow(cobs[i],gamma))
+		
+    fxa.pred[i] ~ dnorm(fxa.hat.pred[i],tau) # posterior prediction
+    fxa.hat.pred[i] <- emax * pow(cobs[i],gamma) / (pow(ec50.pred[subject[i]],gamma) + pow(cobs[i],gamma))
+
+  }
+	
+  ## simulation to show posterior predictive distribution as a function of concentration
+  for(i in 1:nsim){
+	
+    csim[i] <- cmin + (i-1)*(cmax-cmin)/(nsim-1)
+    log.ec50.pred2[i] ~ dnorm(log.ec50.hat,tau.ec50)
+    log(ec50.pred2[i]) <- log.ec50.pred2[i]
+    fxa.pred2[i] ~ dnorm(fxa.hat.pred2[i],tau) # simulation to generate posterior predictive distributions
+    fxa.hat.pred2[i] <- emax * pow(csim[i],gamma) / (pow(ec50.pred2[i],gamma) + pow(csim[i],gamma))
+
+  }
+	
+  emax ~ dunif(0,100)
+  log.ec50.hat ~ dnorm(0,0.000001)
+  log(ec50.hat) <- log.ec50.hat
+  gamma ~ dunif(0,10)
+	
+  omega.ec50 ~ dunif(0,100000)
+  tau.ec50 <- 1/(omega.ec50*omega.ec50)
+  sigma ~ dunif(0,1000)
+  tau <- 1/(sigma*sigma)
+
+}

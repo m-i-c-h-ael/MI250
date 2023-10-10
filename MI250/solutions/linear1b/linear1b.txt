@@ -1,0 +1,21 @@
+model{
+
+	for(i in 1:10){
+
+		# model for observed data (likelihood function)
+		y[i] ~ dnorm(ymean[i],tau)
+		# simulation of new "observations", i.e., samples from
+		# the posterior predictive distribution
+		ypred[i] ~ dnorm(ymean[i],tau)
+		# expected value of y[i] given x[i]
+		ymean[i] <- a + b*x[i]
+
+	}
+
+	# prior distributions
+	a ~ dnorm(0,0.0001)
+	b ~ dnorm(0,0.0001)
+	sigma ~ dunif(0,10000)
+	tau <- 1/(sigma*sigma)
+
+}

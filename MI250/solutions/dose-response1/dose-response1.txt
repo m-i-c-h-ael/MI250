@@ -1,0 +1,54 @@
+model{
+	for(i in 1:nstudy){
+	# inter-trial variation
+		log.emax[i] ~ dnorm(mu.emax,tau.emax)
+		log.e0[i] ~ dnorm(mu.e0,tau.e0)
+		emax[i] <- exp(log.emax[i])
+		e0[i] <- exp(log.e0[i])
+
+		log.emax.pred[i] ~ dnorm(mu.emax,tau.emax)
+		log.e0.pred[i] ~ dnorm(mu.e0,tau.e0)
+		emax.pred[i] <- exp(log.emax.pred[i])
+		e0.pred[i] <- exp(log.e0.pred[i])
+}
+	for(i in 1:narm){
+
+		# model for observed data (likelihood function)
+		# note use of "study" to index trial-specific parameters
+		resp.median[i] <- e0[study[i]] + emax[study[i]]*dose[i]/(ed50+dose[i])
+		mu.resp[i] <- log(resp.median[i])
+		tau[i] <- tau.resp * n[i]
+
+		# WinBUGS feature for data transformation
+		log.resp[i] <- log(resp[i])
+		log.resp[i] ~ dnorm(mu.resp[i],tau[i])
+
+		# simulation of new "observations" in the same studies
+		log.resp.cond[i] ~ dnorm(mu.resp[i],tau[i])
+		resp.cond[i] <- exp(log.resp.cond[i])
+
+		# simulation of new "observations" in possible future studies, i.e.,
+		# samples from the posterior predictive distribution
+		resp.median.pred[i] <- e0.pred[study[i]] + emax.pred[study[i]]*dose[i]/(ed50+dose[i])
+		mu.resp.pred[i] <- log(resp.median.pred[i])
+		log.resp.pred[i] ~ dnorm(mu.resp.pred[i],tau[i])
+		resp.pred[i] <- exp(log.resp.pred[i])
+		
+	}
+	# prior distributions
+	mu.emax ~ dnorm(0,0.0001)
+	mu.e0 ~ dnorm(0,0.0001)
+	log.ed50 ~ dnorm(0,0.0001)
+	ed50 <- exp(log.ed50)
+	med.emax <- exp(mu.emax)
+	med.e0 <- exp(mu.e0)
+	omega.emax ~ dunif(0,10000)
+	omega.e0 ~ dunif(0,10000)
+	sigma ~ dunif(0,10000)
+	tau.emax <- 1/(omega.emax*omega.emax)
+	tau.e0 <- 1/(omega.e0*omega.e0)
+	tau.resp <- 1/(sigma*sigma)
+	cv.emax <- 1/sqrt(tau.emax)
+	cv.e0 <- 1/sqrt(tau.e0)
+	cv.resp <- 1/sqrt(tau.resp)
+}

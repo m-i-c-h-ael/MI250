@@ -1,0 +1,19 @@
+model
+{
+
+	for(i in 1:nobs){
+	
+		fxa[i] ~ dnorm(fxa.hat[i],tau)          # likelihood
+		fxa.pred[i] ~ dnorm(fxa.hat[i],tau)   # simulation to generate posterior predictive distributions
+		fxa.hat[i] <- emax * pow(cobs[i],gamma) / (pow(ec50,gamma) + pow(cobs[i],gamma))
+		
+	}
+	
+	emax ~ dunif(0,100)
+	log.ec50 ~ dnorm(0,0.000001)
+	log(ec50) <- log.ec50
+	gamma ~ dunif(0,10)
+	sigma ~ dunif(0,1000)
+	tau <- 1/(sigma*sigma)
+	
+}

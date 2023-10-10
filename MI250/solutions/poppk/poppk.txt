@@ -1,0 +1,85 @@
+model
+{
+
+  for(i in 1:nSubjects){
+
+    ## Inter-individual variability
+
+    ## Individual parameters, i.e., parameters conditioned on data for the ith individual
+    logtheta[i, 1:5] ~ dmnorm(logthetaMean[i, 1:5], omegaInv[1:5, 1:5])
+    logthetaMean[i, 1] <- logCLHat              # CL
+    logthetaMean[i, 2] <- logQHat               # Q
+    logthetaMean[i, 3] <- logV1Hat              # V1
+    logthetaMean[i, 4] <- logV2Hat              # V2
+    logthetaMean[i, 5] <- logDkaHat             # ka - alpha1
+    theta[i,6] <- 1                             # F1
+    theta[i,7] <- 1                             # F2
+    theta[i,8] <- 1                             # F3
+    theta[i,9] <- 0                             # tlag1
+    theta[i,10] <- 0                            # tlag2
+    theta[i,11] <- 0                            # tlag3
+
+    ## Simulated parameters for hypothetical new individuals
+    logthetaPred[i, 1:5] ~ dmnorm(logthetaMean[i, 1:5], omegaInv[1:5, 1:5])
+    thetaPred[i,6] <- 1                 # F1
+    thetaPred[i,7] <- 1                 # F2
+    thetaPred[i,8] <- 1                 # F3
+    thetaPred[i,9] <- 0                 # tlag1
+    thetaPred[i,10] <- 0                # tlag2
+    thetaPred[i,11] <- 0                # tlag3
+		
+    for(j in 1:5){
+      log(theta[i,j]) <- logtheta[i,j]
+      log(thetaPred[i,j]) <- logthetaPred[i,j]
+    }
+
+    ## Calculate amounts in each compartment for all event times for the ith individual
+
+    ## Individual predictions
+    xhat[start[i]:end[i],1:3] <- TwoCptModel(time[start[i]:end[i]], amt[start[i]:end[i]],
+                                             rate[start[i]:end[i]], ii[start[i]:end[i]],
+                                             evid[start[i]:end[i]], cmt[start[i]:end[i]],
+                                             addl[start[i]:end[i]], ss[start[i]:end[i]],
+                                             theta[i,])
+
+    ## Population predictions
+    xhatPred[start[i]:end[i],1:3] <- TwoCptModel(time[start[i]:end[i]], amt[start[i]:end[i]],
+                                                 rate[start[i]:end[i]], ii[start[i]:end[i]],
+                                                 evid[start[i]:end[i]], cmt[start[i]:end[i]],
+                                                 addl[start[i]:end[i]], ss[start[i]:end[i]],
+                                                 thetaPred[i,])
+
+  }
+	
+  for(i in 1:nObs){
+	
+    logCobs[i] ~ dnorm(logCHat[i],tau)I(, loglq[i]) # Likelihood
+    logCobsCond[i] ~ dnorm(logCHat[i],tau) # Individual prediction
+    CHat[i] <- xhat[i,2]/theta[subject[i],3]
+    logCHat[i] <- log(max(CHat[i],eps))
+
+    logCobsPred[i] ~ dnorm(logCHatPred[i],tau) # Population prediction
+    CHatPred[i] <- xhatPred[i,2]/thetaPred[subject[i],3] 
+    logCHatPred[i] <- log(max(CHatPred[i],eps))
+
+  }
+
+  ## Prior distributions
+
+  logCLHat ~ dnorm(0,1.0E-6)
+  logQHat ~ dnorm(0,1.0E-6)
+  logV1Hat ~ dnorm(0,1.0E-6)
+  logV2Hat ~ dnorm(0,1.0E-6)
+  logDkaHat ~ dnorm(0,1.0E-6)
+  log(CLHat) <- logCLHat
+  log(QHat) <- logQHat
+  log(V1Hat) <- logV1Hat
+  log(V2Hat) <- logV2Hat
+  log(DkaHat) <- logDkaHat
+  tau <- 1/(sigma*sigma)
+  sigma ~ dunif(0,1000)
+  omegaInv[1:5, 1:5] ~ dwish(omegaInvPrior[1:5, 1:5], 5)
+  omega[1:5, 1:5] <- inverse(omegaInv[1:5, 1:5])
+  eps <- 1.0E-6
+	
+}

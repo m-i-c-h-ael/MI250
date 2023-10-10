@@ -1,0 +1,140 @@
+model
+{
+  ## PK model: Two compartment with first order absorption
+  ## PD model:  Friberg-Karlsson semi-mechanistic model for neutrophil counts
+
+  ## theta = (CL, Q, V2, V3, ka, mtt, circ0, gamma, alpha)
+  ## IIV in (CL, Q, V2, V3, ka) and (mtt, circ0, alpha)
+
+  for(i in 1:nsub){
+
+    ## Inter-individual variability
+
+    ## Individual parameters, i.e., parameters conditioned on data for the ith individual
+
+    ## PK parameters --- multivariate normal
+    logtheta[i, 1:5] ~ dmnorm(logthetaMean[i, 1:5], omegaPKInv[1:5, 1:5])
+    logthetaMean[i, 1] <- logCLHat + 0.75*log(weight[start[i]]/70) # CL
+    logthetaMean[i, 2] <- logQHat + 0.75*log(weight[start[i]]/70)  # Q
+    logthetaMean[i, 3] <- logV1Hat + log(weight[start[i]]/70) # V2
+    logthetaMean[i, 4] <- logV2Hat + log(weight[start[i]]/70) # V3
+    logthetaMean[i, 5] <- log(kaHat)     # ka
+
+    ## PD parameters --- univariate normals
+    logMtt[i] ~ dnorm(logMttHat, tauMtt)
+    logCirc0[i] ~ dnorm(logCirc0Hat, tauCirc0)
+    logAlpha[i] ~ dnorm(logAlphaHat, tauAlpha)
+
+    for(j in 1:5){
+      log(thetaPK[i, j]) <- logtheta[i, j]
+      ## cut() used so that the PD data will not affect the PK parameter estimates
+      log(thetaPD[i, j]) <- cut(logtheta[i, j])
+    }
+    log(thetaPD[i, 6]) <- logMtt[i]
+    log(thetaPD[i, 7]) <- logCirc0[i]
+    thetaPD[i, 8] <- gamma
+    log(thetaPD[i, 9]) <- logAlpha[i]
+
+    for(j in 1:3){
+      thetaPK[i, 5 + j] <- 1                     # Fj
+      thetaPK[i, 8 + j] <- 0                     # tlagj
+    }
+
+    for(j in 1:8){
+      thetaPD[i, 9 + j] <- 1                     # Fj
+      thetaPD[i, 17 + j] <- 0                     # tlagj
+    }
+        
+    ## Calculate amounts in each compartment for all event times for the ith individual
+
+    ## Individual predictions
+
+    xHatPK[start[i]:end[i],1:3] <- TwoCptKaModel(time[start[i]:end[i]], amt[start[i]:end[i]],
+                                             rate[start[i]:end[i]], ii[start[i]:end[i]],
+                                             evid[start[i]:end[i]], cmt[start[i]:end[i]],
+                                             addl[start[i]:end[i]], ss[start[i]:end[i]],
+                                             thetaPK[i,])
+    ##xHatPD[start[i]:end[i],1:8] <- TwoCptNeut2ModelRK45(time[start[i]:end[i]], amt[start[i]:end[i]],
+    xHatPD[start[i]:end[i],1:8] <- TwoCptNeut2ModelLSODA(time[start[i]:end[i]], amt[start[i]:end[i]],
+                                             rate[start[i]:end[i]], ii[start[i]:end[i]],
+                                             evid[start[i]:end[i]], cmt[start[i]:end[i]],
+                                             addl[start[i]:end[i]], ss[start[i]:end[i]],
+                                             thetaPD[i,])
+
+  }
+	
+  for(i in 1:nobs){
+
+    ## PK data (ME-2 plasma concentrations)
+
+    logCobs[i] ~ dnorm(logCHat[i], tauPK)I(, loglq[i]) # Likelihood
+    logCobsCond[i] ~ dnorm(logCHat[i], tauPK) # Individual prediction
+    cHat[i] <- 1000 * xHatPK[i, 2] / thetaPK[subject[i], 3]
+    logCHat[i] <- log(max(cHat[i], eps))
+
+    ## PD data (neutrophil counts)
+
+##    logNeut[i] ~ dt(logNeutHat[i], tauNeut, dfNeut) # Likelihood
+##    logNeutCond[i] ~ dt(logNeutHat[i], tauNeut, dfNeut)  # Individual prediction
+    logNeut[i] ~ dnorm(logNeutHat[i], tauNeut) # Likelihood
+    logNeutCond[i] ~ dnorm(logNeutHat[i], tauNeut)  # Individual prediction
+    neutHat[i] <- xHatPD[i, 8] + thetaPD[subject[i], 7] # xHat[, 8] is CFB
+    logNeutHat[i] <- log(max(neutHat[i], eps))
+    
+  }
+
+  ## Prior distributions
+
+  ## PK parameters --- weakly informative priors
+
+  logCLHat ~ dnorm(0, 1.0E-2)
+  logQHat ~ dnorm(0, 1.0E-2)
+  logV1Hat ~ dnorm(0, 1.0E-2)
+  logV2Hat ~ dnorm(0, 1.0E-2)
+  log(CLHat) <- logCLHat
+  log(QHat) <- logQHat
+  log(V1Hat) <- logV1Hat
+  log(V2Hat) <- logV2Hat
+  ## Constrain kaHat > lambda
+  logDkaHat ~ dnorm(0, 1.0E-2)
+  k10 <- CLHat / V1Hat
+  k12 <- QHat / V1Hat
+  k21 <- QHat / V2Hat
+  lambda <- ((k10 + k12 + k21) + sqrt(pow(k10 + k12 + k21, 2) - 4 * k10 * k21)) / 2
+  kaHat<- exp(logDkaHat) + lambda
+
+  tauPK ~ dgamma(0.001, 0.001)
+  sigmaPK <- sqrt(1/tauPK)
+  omegaPKInv[1:5, 1:5] ~ dwish(omegaPKInvPrior[1:5, 1:5], 5)
+  omegaPK[1:5, 1:5] <- inverse(omegaPKInv[1:5, 1:5])
+
+  ## PD parameters
+
+  ## Drug-specific parameters --- weakly informative priors
+  
+  alphaHat ~ dunif(0, 1)
+  logAlphaHat <- log(alphaHat)
+  omegaAlpha ~ dunif(0, 5)
+  tauAlpha <- 1 / (omegaAlpha * omegaAlpha)
+  
+  ## Physiologic system parameters --- informative priors
+  
+  logMttHat ~ dnorm(logMttHatPriorMean, logMttHatPriorTau)
+  logCirc0Hat ~ dnorm(logCirc0HatPriorMean, logCirc0HatPriorTau)
+  logGamma ~ dnorm(logGammaPriorMean, logGammaPriorTau)
+  log(mttHat) <- logMttHat
+  log(circ0Hat) <- logCirc0Hat
+  log(gamma) <- logGamma
+  
+  tauMtt ~ dgamma(tauMttPriorAlpha, tauMttPriorBeta)
+  tauCirc0 ~ dgamma(tauCirc0PriorAlpha, tauCirc0PriorBeta)
+  omegaMtt <- sqrt(1/tauMtt)
+  omegaCirc0 <- sqrt(1/tauCirc0)
+  
+  tauNeut ~ dgamma(0.001, 0.001)
+  sigmaNeut <- sqrt(1/tauNeut)
+  dfNeut ~ dunif(2, 50)
+
+  eps <- 1.0E-10
+	
+}
